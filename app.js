@@ -1,35 +1,50 @@
 const $=id=>document.getElementById(id);
 const examples=[['床前明月光','疑是地上霜'],['举头望明月','低头思故乡'],['春眠不觉晓','处处闻啼鸟'],['夜来风雨声','花落知多少'],['白日依山尽','黄河入海流'],['欲穷千里目','更上一层楼'],['海内存知己','天涯若比邻'],['大漠孤烟直','长河落日圆'],['明月松间照','清泉石上流'],['独在异乡为异客','每逢佳节倍思亲'],['谁言寸草心','报得三春晖'],['山重水复疑无路','柳暗花明又一村']];
-let bank=examples,bankName='经典诗词 · 示例题库',round=[],index=0,phase='idle',remaining=0,deadline=0,timer=null,paused=false,utterance=null,audioContext=null,toneNodes=[],revealSpeaking=false;
+let bank=examples,bankName='经典诗词 · 示例题库',round=[],index=0,phase='idle',remaining=0,deadline=0,timer=null,paused=false,utterance=null,audioContext=null,toneNodes=[],revealSpeaking=false,revealAuto=false;
 try{const saved=JSON.parse(localStorage.getItem('jujian-bank'));if(saved&&Array.isArray(saved.questions)&&saved.questions.length&&saved.questions.every(q=>Array.isArray(q)&&q.length===2&&q.every(s=>typeof s==='string'&&s.trim()))){bank=saved.questions;bankName=saved.name||'我的题库'}}catch{}
 function updateBank(){$('bankName').textContent=bankName;$('bankCount').textContent=bank.length}
 updateBank();
 function cancelSpeech(){if('speechSynthesis'in window)speechSynthesis.cancel();utterance=null}
-function speak(text,onDone=()=>{}){cancelSpeech();if(!$('voice').checked){onDone();return;}if(!('speechSynthesis'in window)){$('status').textContent='当前浏览器不支持语音，请使用 Chrome、Edge 或 Safari。';onDone();return}utterance=new SpeechSynthesisUtterance(text);utterance.lang='zh-CN';utterance.rate=.85;const voices=speechSynthesis.getVoices();const chinese=voices.find(v=>v.lang.startsWith('zh'));if(chinese)utterance.voice=chinese;const current=utterance;utterance.onend=()=>{if(utterance===current)onDone()};utterance.onerror=e=>{if(utterance===current)onDone();if(e.error!=='interrupted'&&e.error!=='canceled')$('status').textContent='语音播放失败，可检查浏览器语音权限或关闭语音继续练习。'};speechSynthesis.speak(utterance)}
-function initAudio(){
+function speak(text,onDone=()=>{}){cancelSpeech();if(!$('voice').checked){onDone(false);return;}if(!('speechSynthesis'in window)){$('status').textContent='当前浏览器不支持语音，请使用 Chrome、Edge 或 Safari。';onDone(false);return}utterance=new SpeechSynthesisUtterance(text);utterance.lang='zh-CN';utterance.rate=.85;const voices=speechSynthesis.getVoices();const chinese=voices.find(v=>v.lang.startsWith('zh'));if(chinese)utterance.voice=chinese;const current=utterance;utterance.onend=()=>{if(utterance===current)onDone(true)};utterance.onerror=e=>{if(utterance===current)onDone(false);if(e.error!=='interrupted'&&e.error!=='canceled')$('status').textContent='语音播放失败，可检查浏览器语音权限或关闭语音继续练习。'};speechSynthesis.speak(utterance)}
+async function initAudio(){
   if(!audioContext){const Audio=window.AudioContext||window.webkitAudioContext;if(!Audio){$('status').textContent='当前浏览器不支持倒计时提示音。';return}try{audioContext=new Audio()}catch{$('status').textContent='无法启用倒计时提示音。';return}}
-  if(audioContext.state==='suspended')audioContext.resume().catch(()=>{$('status').textContent='提示音未能启用，请检查浏览器声音权限。'});
+  if(audioContext.state==='suspended')await audioContext.resume().catch(()=>{$('status').textContent='提示音未能启用，请检查浏览器声音权限。'});
 }
 function stopTones(){toneNodes.forEach(node=>{try{node.stop()}catch{}});toneNodes=[]}
-function playTone(){
-  if(!$('sound').checked||!audioContext||audioContext.state!=='running')return;
+function playTone(preview=false){
+  if((!preview&&!$('sound').checked)||!audioContext||audioContext.state!=='running')return;
   const oscillator=audioContext.createOscillator(),gain=audioContext.createGain(),now=audioContext.currentTime;
-  oscillator.type='sine';oscillator.frequency.setValueAtTime(660,now);oscillator.frequency.exponentialRampToValueAtTime(440,now+.35);
-  gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(.18,now+.015);gain.gain.exponentialRampToValueAtTime(.001,now+.42);
+  oscillator.type='sine';oscillator.frequency.setValueAtTime(784,now);
+  gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(.14,now+.005);gain.gain.exponentialRampToValueAtTime(.001,now+.28);
   oscillator.connect(gain);gain.connect(audioContext.destination);toneNodes.push(oscillator);
   oscillator.onended=()=>{oscillator.disconnect();gain.disconnect();toneNodes=toneNodes.filter(node=>node!==oscillator)};
-  oscillator.start(now);oscillator.stop(now+.45);
+  oscillator.start(now);oscillator.stop(now+.3);
 }
 function element(tag,text,cls){const el=document.createElement(tag);el.textContent=text;if(cls)el.className=cls;return el}
-function renderQuestion(){const stage=$('stage');stage.replaceChildren();const q=round[index];const pair=element('div','','sentence-pair');q.pair.forEach((text,i)=>{const hidden=phase==='recall'&&i!==q.side;const sentence=element('div',hidden?'_'.repeat(Math.max(3,Array.from(text).length)):text,'sentence'+(hidden?' placeholder':i!==q.side?' reveal':''));if(hidden)sentence.setAttribute('aria-label',`句${i+1}，请回想`);pair.append(sentence)});stage.append(pair);stage.append(element('div',String(remaining),'countdown'),element('div',phase==='recall'?'回想另一句，答案即将揭晓':'完整题目 · 即将进入下一题','small'));$('phase').textContent=phase==='recall'?'听一句 · 想一想':'答案揭晓';$('progress').textContent=`第 ${index+1} / ${round.length} 题`;$('bar').style.width=`${index/round.length*100}%`}
+function renderQuestion(){const stage=$('stage');stage.replaceChildren();const q=round[index];const pair=element('div','','sentence-pair');q.pair.forEach((text,i)=>{if(i===1)pair.append(element('span','，','sentence-comma'));const hidden=phase==='recall'&&i!==q.side;const sentence=element('div',hidden?'_'.repeat(Array.from(text).length):text,'sentence'+(hidden?' placeholder':i!==q.side?' reveal':''));if(hidden)sentence.setAttribute('aria-label',`句${i+1}，请回想`);pair.append(sentence)});stage.append(pair);if(phase==='recall')stage.append(element('div',String(remaining),'countdown'));stage.append(element('div',phase==='recall'?'回想另一句，答案即将揭晓':'正在朗读完整题目 · 读完自动进入下一题','small'));$('phase').textContent=phase==='recall'?'看一句 · 想一想':'答案揭晓';$('progress').textContent=`第 ${index+1} / ${round.length} 题`;$('bar').style.width=`${index/round.length*100}%`}
 function setPhase(next,seconds){phase=next;remaining=seconds;deadline=performance.now()+seconds*1000;renderQuestion()}
-function nextQuestion(){if(index>=round.length){finish(true);return}revealSpeaking=false;setPhase('recall',5);playTone();speak(round[index].pair[round[index].side])}
-function tick(){if(paused||phase==='idle')return;const left=Math.max(0,Math.ceil((deadline-performance.now())/1000));if(left!==remaining){remaining=left;if(phase==='recall'&&left>0)playTone();const el=$('stage').querySelector('.countdown');if(el)el.textContent=left}if(left===0){if(phase==='recall'){cancelSpeech();stopTones();setPhase('reveal',3);revealSpeaking=true;speak(round[index].pair.join('，'),()=>{revealSpeaking=false})}else if(!revealSpeaking){index++;nextQuestion()}else{const hint=$('stage').querySelector('.small');if(hint)hint.textContent='正在朗读完整题目…'}}}
-$('start').onclick=()=>{initAudio();stopTones();cancelSpeech();clearInterval(timer);const shuffled=bank.map(pair=>({pair,side:Math.random()<.5?0:1}));for(let i=shuffled.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]]}round=shuffled.slice(0,10);index=0;paused=false;$('start').hidden=true;$('pause').hidden=false;$('stop').hidden=false;$('pause').textContent='暂停';$('file').disabled=true;nextQuestion();timer=setInterval(tick,100)};
-function finish(completed){clearInterval(timer);cancelSpeech();stopTones();revealSpeaking=false;phase='idle';paused=false;$('file').disabled=false;$('start').hidden=false;$('start').textContent='再来一轮 →';$('pause').hidden=true;$('stop').hidden=true;$('phase').textContent=completed?'本轮完成':'练习已结束';$('bar').style.width=completed?'100%':'0%';$('stage').replaceChildren(element('div',completed?'✓':'句','motif'),element('h2',completed?'又多了一份积累。':'休息一下，随时再出发。'),element('p',completed?`已完成本轮 ${round.length} 题，继续练习巩固记忆。`:'点击下方按钮，开始新的一轮。'))}
+function nextQuestion(){if(index>=round.length){finish(true);return}revealSpeaking=false;revealAuto=false;$('next').hidden=true;setPhase('recall',5);playTone()}
+function advance(){if(phase!=='reveal'||paused)return;index++;nextQuestion()}
+function completeReveal(success){
+  revealSpeaking=false;revealAuto=success;
+  if(success){advance();return}
+  $('next').hidden=false;
+  const hint=$('stage').querySelector('.small');if(hint)hint.textContent='请阅读完整题目，点击「下一题」继续。';
+}
+function tick(){
+  if(paused||phase==='idle')return;
+  if(phase==='reveal'){if(revealAuto&&!revealSpeaking)advance();return}
+  const left=Math.max(0,Math.ceil((deadline-performance.now())/1000));
+  if(left!==remaining){remaining=left;if(left>0)playTone();const el=$('stage').querySelector('.countdown');if(el)el.textContent=left}
+  if(left===0){cancelSpeech();stopTones();setPhase('reveal',0);revealSpeaking=true;speak(round[index].pair.join('，'),completeReveal)}
+}
+$('next').onclick=advance;
+$('preview').onclick=async()=>{if(phase!=='idle')return;await initAudio();playTone(true)};
+$('start').onclick=async()=>{if(phase!=='idle')return;phase='starting';await initAudio();stopTones();cancelSpeech();clearInterval(timer);const shuffled=bank.map(pair=>({pair,side:Math.random()<.5?0:1}));for(let i=shuffled.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]]}round=shuffled.slice(0,10);index=0;paused=false;$('start').hidden=true;$('pause').hidden=false;$('stop').hidden=false;$('pause').textContent='暂停';$('file').disabled=true;$('preview').disabled=true;nextQuestion();timer=setInterval(tick,100)};
+function finish(completed){clearInterval(timer);cancelSpeech();stopTones();revealSpeaking=false;phase='idle';paused=false;$('next').hidden=true;$('preview').disabled=false;$('file').disabled=false;$('start').hidden=false;$('start').textContent='再来一轮 →';$('pause').hidden=true;$('stop').hidden=true;$('phase').textContent=completed?'本轮完成':'练习已结束';$('bar').style.width=completed?'100%':'0%';$('stage').replaceChildren(element('div',completed?'✓':'句','motif'),element('h2',completed?'又多了一份积累。':'休息一下，随时再出发。'),element('p',completed?`已完成本轮 ${round.length} 题，继续练习巩固记忆。`:'点击下方按钮，开始新的一轮。'))}
 $('stop').onclick=()=>finish(false);
-$('pause').onclick=()=>{paused=!paused;if(paused){stopTones();remaining=Math.max(0,(deadline-performance.now())/1000);if('speechSynthesis'in window)speechSynthesis.pause();$('pause').textContent='继续';$('phase').textContent='已暂停'}else{initAudio();deadline=performance.now()+remaining*1000;if('speechSynthesis'in window)speechSynthesis.resume();$('pause').textContent='暂停';$('phase').textContent=phase==='recall'?'听一句 · 想一想':'答案揭晓'}};
-$('voice').onchange=()=>{if(!$('voice').checked){cancelSpeech();revealSpeaking=false}};
+$('pause').onclick=()=>{paused=!paused;if(paused){stopTones();remaining=Math.max(0,(deadline-performance.now())/1000);if('speechSynthesis'in window)speechSynthesis.pause();$('pause').textContent='继续';$('phase').textContent='已暂停'}else{initAudio();deadline=performance.now()+remaining*1000;if('speechSynthesis'in window)speechSynthesis.resume();$('pause').textContent='暂停';$('phase').textContent=phase==='recall'?'看一句 · 想一想':'答案揭晓'}};
+$('voice').onchange=()=>{if(!$('voice').checked){cancelSpeech();if(phase==='reveal')completeReveal(false)}};
 $('sound').onchange=()=>{if($('sound').checked)initAudio();else stopTones()};
 function parseCSV(text){const rows=[];let row=[],cell='',quoted=false;for(let i=0;i<text.length;i++){const c=text[i];if(c==='"'){if(quoted&&text[i+1]==='"'){cell+='"';i++}else quoted=!quoted}else if(c===','&&!quoted){row.push(cell);cell=''}else if((c==='\n'||c==='\r')&&!quoted){if(c==='\r'&&text[i+1]==='\n')i++;row.push(cell);if(row.some(s=>s.trim()))rows.push(row);row=[];cell=''}else cell+=c}if(quoted)throw Error('CSV 引号未闭合');row.push(cell);if(row.some(s=>s.trim()))rows.push(row);return rows}
 function parseBank(text,name){text=text.replace(/^\uFEFF/,'').trim();let rows;if(name.toLowerCase().endsWith('.json')){rows=JSON.parse(text);if(!Array.isArray(rows))rows=rows.questions;if(!Array.isArray(rows))throw Error('JSON 应为题目数组或包含 questions 数组');rows=rows.map(q=>Array.isArray(q)?q:[q['句1']??q.sentence1,q['句2']??q.sentence2])}else if(name.toLowerCase().endsWith('.csv')){rows=parseCSV(text);if(rows.length&&['句1','sentence1'].includes(rows[0][0].trim()))rows.shift()}else{rows=text.split(/\r?\n/).filter(s=>s.trim()).map(s=>s.split(/\t|\|/))}if(!rows.length)throw Error('题库为空');if(rows.length>10000)throw Error('题库最多支持 10000 题');return rows.map((q,i)=>{if(q.length!==2||q.some(s=>typeof s!=='string'||!s.trim()))throw Error(`第 ${i+1} 题需要两句非空文字`);if(q.some(s=>s.length>2000))throw Error(`第 ${i+1} 题过长`);return q.map(s=>s.trim())})}
