@@ -16,11 +16,11 @@ function playTone(preview=false,seconds=remaining,delay=0){
   const urgent=seconds<=2;
   const hit=(offset,strength)=>{
     const now=audioContext.currentTime+delay+offset;
-    // A falling bass drum plus a short midrange attack stays audible on small speakers.
-    [[160,48,.42,'sine'],[320,100,.13,'triangle']].forEach(([pitch,end,duration,type],layer)=>{
+    // Bright paired electronic tones with a sharp attack and short decay.
+    [[1046,880,.18,'triangle'],[1568,1320,.12,'sine']].forEach(([pitch,end,duration,type],layer)=>{
       const oscillator=audioContext.createOscillator(),gain=audioContext.createGain();
       oscillator.type=type;oscillator.frequency.setValueAtTime(pitch,now);oscillator.frequency.exponentialRampToValueAtTime(end,now+duration);
-      gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(strength*(layer===0?.48:.13),now+.006);gain.gain.exponentialRampToValueAtTime(.001,now+duration);
+      gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(strength*(layer===0?.24:.12),now+.006);gain.gain.exponentialRampToValueAtTime(.001,now+duration);
       oscillator.connect(gain);gain.connect(audioContext.destination);toneNodes.push(oscillator);
       oscillator.onended=()=>{oscillator.disconnect();gain.disconnect();toneNodes=toneNodes.filter(node=>node!==oscillator)};
       oscillator.start(now);oscillator.stop(now+duration+.02);
