@@ -11,14 +11,23 @@ async function initAudio(){
   if(audioContext.state==='suspended')await audioContext.resume().catch(()=>{$('status').textContent='提示音未能启用，请检查浏览器声音权限。'});
 }
 function stopTones(){toneNodes.forEach(node=>{try{node.stop()}catch{}});toneNodes=[]}
-function playTone(preview=false){
+function playTone(preview=false,seconds=remaining,delay=0){
   if((!preview&&!$('sound').checked)||!audioContext||audioContext.state!=='running')return;
-  const oscillator=audioContext.createOscillator(),gain=audioContext.createGain(),now=audioContext.currentTime;
-  oscillator.type='sine';oscillator.frequency.setValueAtTime(784,now);
-  gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(.14,now+.005);gain.gain.exponentialRampToValueAtTime(.001,now+.28);
-  oscillator.connect(gain);gain.connect(audioContext.destination);toneNodes.push(oscillator);
-  oscillator.onended=()=>{oscillator.disconnect();gain.disconnect();toneNodes=toneNodes.filter(node=>node!==oscillator)};
-  oscillator.start(now);oscillator.stop(now+.3);
+  const urgent=seconds<=2;
+  const hit=(offset,strength)=>{
+    const now=audioContext.currentTime+delay+offset;
+    // A falling bass drum plus a short midrange attack stays audible on small speakers.
+    [[160,48,.42,'sine'],[320,100,.13,'triangle']].forEach(([pitch,end,duration,type],layer)=>{
+      const oscillator=audioContext.createOscillator(),gain=audioContext.createGain();
+      oscillator.type=type;oscillator.frequency.setValueAtTime(pitch,now);oscillator.frequency.exponentialRampToValueAtTime(end,now+duration);
+      gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(strength*(layer===0?.48:.13),now+.006);gain.gain.exponentialRampToValueAtTime(.001,now+duration);
+      oscillator.connect(gain);gain.connect(audioContext.destination);toneNodes.push(oscillator);
+      oscillator.onended=()=>{oscillator.disconnect();gain.disconnect();toneNodes=toneNodes.filter(node=>node!==oscillator)};
+      oscillator.start(now);oscillator.stop(now+duration+.02);
+    });
+  };
+  hit(0,urgent?1:.85);
+  if(urgent)hit(.24,.75);
 }
 function element(tag,text,cls){const el=document.createElement(tag);el.textContent=text;if(cls)el.className=cls;return el}
 function renderQuestion(){const stage=$('stage');stage.replaceChildren();const q=round[index];const pair=element('div','','sentence-pair');q.pair.forEach((text,i)=>{if(i===1)pair.append(element('span','，','sentence-comma'));const hidden=phase==='recall'&&i!==q.side;const sentence=element('div',hidden?'_'.repeat(Array.from(text).length):text,'sentence'+(hidden?' placeholder':i!==q.side?' reveal':''));if(hidden)sentence.setAttribute('aria-label',`句${i+1}，请回想`);pair.append(sentence)});stage.append(pair);if(phase==='recall')stage.append(element('div',String(remaining),'countdown'));stage.append(element('div',phase==='recall'?'回想另一句，答案即将揭晓':'正在朗读完整题目 · 读完自动进入下一题','small'));$('phase').textContent=phase==='recall'?'看一句 · 想一想':'答案揭晓';$('progress').textContent=`第 ${index+1} / ${round.length} 题`;$('bar').style.width=`${index/round.length*100}%`}
@@ -39,7 +48,7 @@ function tick(){
   if(left===0){cancelSpeech();stopTones();setPhase('reveal',0);revealSpeaking=true;speak(round[index].pair.join('，'),completeReveal)}
 }
 $('next').onclick=advance;
-$('preview').onclick=async()=>{if(phase!=='idle')return;await initAudio();playTone(true)};
+$('preview').onclick=async()=>{if(phase!=='idle')return;await initAudio();stopTones();for(let i=0;i<5;i++)playTone(true,5-i,i)};
 $('start').onclick=async()=>{if(phase!=='idle')return;phase='starting';await initAudio();stopTones();cancelSpeech();clearInterval(timer);const shuffled=bank.map(pair=>({pair,side:Math.random()<.5?0:1}));for(let i=shuffled.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]]}round=shuffled.slice(0,10);index=0;paused=false;$('start').hidden=true;$('pause').hidden=false;$('stop').hidden=false;$('pause').textContent='暂停';$('file').disabled=true;$('preview').disabled=true;nextQuestion();timer=setInterval(tick,100)};
 function finish(completed){clearInterval(timer);cancelSpeech();stopTones();revealSpeaking=false;phase='idle';paused=false;$('next').hidden=true;$('preview').disabled=false;$('file').disabled=false;$('start').hidden=false;$('start').textContent='再来一轮 →';$('pause').hidden=true;$('stop').hidden=true;$('phase').textContent=completed?'本轮完成':'练习已结束';$('bar').style.width=completed?'100%':'0%';$('stage').replaceChildren(element('div',completed?'✓':'句','motif'),element('h2',completed?'又多了一份积累。':'休息一下，随时再出发。'),element('p',completed?`已完成本轮 ${round.length} 题，继续练习巩固记忆。`:'点击下方按钮，开始新的一轮。'))}
 $('stop').onclick=()=>finish(false);
