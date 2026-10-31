@@ -13,21 +13,19 @@ async function initAudio(){
 function stopTones(){toneNodes.forEach(node=>{try{node.stop()}catch{}});toneNodes=[]}
 function playTone(preview=false,seconds=remaining,delay=0){
   if((!preview&&!$('sound').checked)||!audioContext||audioContext.state!=='running')return;
-  const urgent=seconds<=2;
   const hit=(offset,strength)=>{
     const now=audioContext.currentTime+delay+offset;
-    // Bright paired electronic tones with a sharp attack and short decay.
-    [[1046,880,.18,'triangle'],[1568,1320,.12,'sine']].forEach(([pitch,end,duration,type],layer)=>{
+    // A clear resonant "deng": firm fundamental and a brighter, faster-decaying overtone.
+    [[523.25,523.25,.78,'sine'],[1048,1046.5,.42,'sine']].forEach(([pitch,end,duration,type],layer)=>{
       const oscillator=audioContext.createOscillator(),gain=audioContext.createGain();
       oscillator.type=type;oscillator.frequency.setValueAtTime(pitch,now);oscillator.frequency.exponentialRampToValueAtTime(end,now+duration);
-      gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(strength*(layer===0?.24:.12),now+.006);gain.gain.exponentialRampToValueAtTime(.001,now+duration);
+      gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(strength*(layer===0?.30:.14),now+.006);gain.gain.exponentialRampToValueAtTime(.001,now+duration);
       oscillator.connect(gain);gain.connect(audioContext.destination);toneNodes.push(oscillator);
       oscillator.onended=()=>{oscillator.disconnect();gain.disconnect();toneNodes=toneNodes.filter(node=>node!==oscillator)};
       oscillator.start(now);oscillator.stop(now+duration+.02);
     });
   };
-  hit(0,urgent?1:.85);
-  if(urgent)hit(.24,.75);
+  hit(0,1);
 }
 function element(tag,text,cls){const el=document.createElement(tag);el.textContent=text;if(cls)el.className=cls;return el}
 function renderQuestion(){const stage=$('stage');stage.replaceChildren();const q=round[index];const pair=element('div','','sentence-pair');q.pair.forEach((text,i)=>{if(i===1)pair.append(element('span','，','sentence-comma'));const hidden=phase==='recall'&&i!==q.side;const sentence=element('div',hidden?'_'.repeat(Array.from(text).length):text,'sentence'+(hidden?' placeholder':i!==q.side?' reveal':''));if(hidden)sentence.setAttribute('aria-label',`句${i+1}，请回想`);pair.append(sentence)});stage.append(pair);if(phase==='recall')stage.append(element('div',String(remaining),'countdown'));stage.append(element('div',phase==='recall'?'回想另一句，答案即将揭晓':'正在朗读完整题目 · 读完自动进入下一题','small'));$('phase').textContent=phase==='recall'?'看一句 · 想一想':'答案揭晓';$('progress').textContent=`第 ${index+1} / ${round.length} 题`;$('bar').style.width=`${index/round.length*100}%`}
