@@ -15,8 +15,11 @@ function playTone(preview=false,seconds=remaining,delay=0){
   if((!preview&&!$('sound').checked)||!audioContext||audioContext.state!=='running')return;
   const hit=(offset,strength)=>{
     const now=audioContext.currentTime+delay+offset;
-    // A clear resonant "deng": firm fundamental and a brighter, faster-decaying overtone.
-    [[523.25,523.25,.78,'sine'],[1048,1046.5,.42,'sine']].forEach(([pitch,end,duration,type],layer)=>{
+    // The final second rings higher and longer: deng, deng, deng, deng, ding.
+    const partials=seconds===1
+      ? [[1318.5,1318.5,.96,'sine'],[2639,2637,.65,'sine']]
+      : [[523.25,523.25,.78,'sine'],[1048,1046.5,.42,'sine']];
+    partials.forEach(([pitch,end,duration,type],layer)=>{
       const oscillator=audioContext.createOscillator(),gain=audioContext.createGain();
       oscillator.type=type;oscillator.frequency.setValueAtTime(pitch,now);oscillator.frequency.exponentialRampToValueAtTime(end,now+duration);
       gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(strength*(layer===0?.30:.14),now+.006);gain.gain.exponentialRampToValueAtTime(.001,now+duration);
